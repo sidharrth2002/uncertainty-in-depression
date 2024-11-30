@@ -2,7 +2,9 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from datatypes import *
+# from original_feature_extractors import *
 from feature_extractors import *
+import torch.nn.functional as F
 
 class LatentGRU(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -30,136 +32,166 @@ class LatentGRU(nn.Module):
         var = torch.exp(logvar)
         return mu, var
 
-
-class COLDModel(nn.Module):
-    def __init__(self):
-        super(COLDModel, self).__init__()
+class COLDModelSimplified(nn.Module):
+    def __init__(self, output_size=2):
+        super(COLDModelSimplified, self).__init__()
 
         config = {
             "visual_net": {
                 "input_dim": 3,
-                "output_dim": 256,
                 "conv_hidden": 256,
                 "lstm_hidden": 256,
                 "num_layers": 4,
                 "activation": "relu",
                 "norm": "bn",
                 "dropout": 0.6,
+                "output_size": 128,
             },
             "audio_net": {
                 "input_dim": 80,
-                "output_dim": 256,
                 "conv_hidden": 256,
                 "lstm_hidden": 256,
                 "num_layers": 4,
                 "activation": "relu",
                 "norm": "bn",
                 "dropout": 0.6,
+                "output_size": 128,
             },
             "text_net": {
                 "input_dim": 512,
-                "output_dim": 256,
                 "conv_hidden": 256,
                 "lstm_hidden": 256,
                 "num_layers": 2,
                 "activation": "relu",
                 "norm": "bn",
                 "dropout": 0.6,
+                "output_size": 128,
             },
         }
 
+        # TODO: if using pre-trained model, load the frozen weights here
         self.audio_extractor = ConvLSTM_Audio(
             input_dim=config["audio_net"]["input_dim"],
-            output_dim=config["audio_net"]["output_dim"],
             conv_hidden=config["audio_net"]["conv_hidden"],
             lstm_hidden=config["audio_net"]["lstm_hidden"],
             num_layers=config["audio_net"]["num_layers"],
             activation=config["audio_net"]["activation"],
             norm=config["audio_net"]["norm"],
             dropout=config["audio_net"]["dropout"],
+            output_size=config["audio_net"]["output_size"],
         )
-
-        # self.text_extractor = ConvLSTM_Text(
-        #     input_dim=config["text_net"]["input_dim"],
-        #     output_dim=config["text_net"]["output_dim"],
-        #     conv_hidden=config["text_net"]["conv_hidden"],
-        #     lstm_hidden=config["text_net"]["lstm_hidden"],
-        #     num_layers=config["text_net"]["num_layers"],
-        #     activation=config["text_net"]["activation"],
-        #     norm=config["text_net"]["norm"],
-        #     dropout=config["text_net"]["dropout"],
-        # )
 
         self.visual_extractor = ConvLSTM_Visual(
             input_dim=config["visual_net"]["input_dim"],
-            output_dim=config["visual_net"]["output_dim"],
             conv_hidden=config["visual_net"]["conv_hidden"],
             lstm_hidden=config["visual_net"]["lstm_hidden"],
             num_layers=config["visual_net"]["num_layers"],
             activation=config["visual_net"]["activation"],
             norm=config["visual_net"]["norm"],
             dropout=config["visual_net"]["dropout"],
+            output_size=config["visual_net"]["output_size"],
         )
 
-        # GRU used to estimate the mean and variance of the latent space
-        self.audio_temporal = LatentGRU(
-            input_size=config["audio_net"]["output_dim"],
-            hidden_size=256,
-            output_size=128
-        )
-        # self.text_temporal = LatentGRU(
-        #     input_size=config["text_net"]["output_dim"],
-        #     hidden_size=256,
-        #     output_size=128
+        # If text modality is used, initialize similarly
+        # self.text_extractor = ConvLSTM_Text(
+        #     input_dim=config["text_net"]["input_dim"],
+        #     conv_hidden=config["text_net"]["conv_hidden"],
+        #     lstm_hidden=config["text_net"]["lstm_hidden"],
+        #     num_layers=config["text_net"]["num_layers"],
+        #     activation=config["text_net"]["activation"],
+        #     norm=config["text_net"]["norm"],
+        #     dropout=config["text_net"]["dropout"],
+        #     output_size=config["text_net"]["output_size"],
         # )
-        self.visual_temporal = LatentGRU(
-            input_size=config["visual_net"]["output_dim"],
-            hidden_size=256,
-            output_size=128
+
+        # Output layer
+        self.output_layer = FullyConnected(
+            in_channels=128,  # Number of modalities
+            out_channels=output_size,
+            activation='softmax',  # For classification
+            normalisation=None
         )
 
-    
     def compute_fusion_weights(self, variance_modalities):
         """
         Compute fusion weights based on the variance of each modality.
+        Lower variance -> higher weight
         """
-        norms = [v.norm(p=2, dim=1) for v in variance_modalities]
+        # Compute L2 norms of variances
+        norms = [v.norm(p=2, dim=1) for v in variance_modalities]  # List of (batch, )
 
-        # reciprocal to give more weight to modalities with lower variance
-        inv_norms = [1 / norm for norm in norms]
-        total_inv_norms = sum(inv_norms)
-        weights = [inv_norm / total_inv_norms for inv_norm in inv_norms]
+        # Convert to weights: inverse of norm
+        inv_norms = [1.0 / (norm + 1e-8) for norm in norms]  # Avoid division by zero
 
-        weights = [weight.unsqueeze(1) for weight in weights]
+        # Stack and apply softmax to get weights
+        stacked_inv_norms = torch.stack(inv_norms, dim=1)  # (batch, num_modalities)
+        weights = F.softmax(stacked_inv_norms, dim=1)     # (batch, num_modalities)
 
-        return weights
+        return weights  # (batch, num_modalities)
 
-    def forward(self, audio_features, text_features):
-        audio_features = self.audio_extractor(audio_features)
-        mean_audio, variance_audio = self.audio_temporal(audio_features)
+    def forward(self, audio_features, visual_features):
+        """
+        Forward pass through the COLDModelSimplified.
+        Args:
+            audio_features: (batch_size, freq, time)
+            visual_features: (batch_size, channels, freq, time)
+        Returns:
+            y_pred: (batch_size, output_size)
+            mean_modalities: list of (batch_size, output_size)
+            variance_modalities: list of (batch_size, output_size)
+        """
+        # Extract features and uncertainty
+        mean_audio, var_audio = self.audio_extractor(audio_features)        # Each: (batch, output_size)
+        mean_visual, var_visual = self.visual_extractor(visual_features)   # Each: (batch, output_size)
 
-        # text_features = self.text_extractor(text_features)
-        # mean_text, variance_text = self.text_temporal(text_features)
+        # If text modality is used, process similarly
+        # mean_text, var_text = self.text_extractor(text_features)
 
-        visual_features = self.visual_extractor(visual_features)
-        mean_visual, variance_visual = self.visual_temporal(visual_features)
+        mean_modalities = [mean_audio, mean_visual]  # Extend if text is included
+        variance_modalities = [var_audio, var_visual]
 
-        mean_modalities = [mean_audio, mean_visual]
-        variance_modalities = [variance_audio, variance_visual]
+        # Compute fusion weights based on variance
+        weights = self.compute_fusion_weights(variance_modalities)  # (batch, num_modalities)
 
-        weights = self.compute_fusion_weights(variance_modalities)
+        # Stack means
+        stacked_means = torch.stack(mean_modalities, dim=1)  # (batch, num_modalities, output_size)
 
-        fused_mean = sum(
-            weight * mean for weight, mean in zip(weights, mean_modalities)
-        )
+        # Apply weights
+        weights = weights.unsqueeze(2)  # (batch, num_modalities, 1)
+        weighted_means = stacked_means * weights  # (batch, num_modalities, output_size)
 
-        y_pred = self.output_layer(fused_mean)
+        # Sum over modalities to get fused representation
+        fused_mean = weighted_means.sum(dim=1)  # (batch, output_size)
+
+        # Pass through output layer
+        y_pred = self.output_layer(fused_mean)  # (batch, output_size)
 
         return y_pred, mean_modalities, variance_modalities
 
+
 if __name__ == "__main__":
-    model = COLDModel()
+    model = COLDModelSimplified(output_size=2)  # e.g., 2 classes for depression detection
     print(model)
-    # count number of parameters
+    # Count number of parameters
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Number of parameters: {num_params}")
+
+    # Example forward pass with dummy data
+    batch_size = 4
+    audio_freq = 80
+    audio_time = 300
+    visual_channels = 3
+    visual_freq = 72
+    visual_time = 3
+
+    dummy_audio = torch.randn(batch_size, audio_freq, audio_time)          # (batch, freq, time)
+    dummy_visual = torch.randn(batch_size, visual_channels, visual_freq, visual_time)  # (batch, C, F, T)
+
+    y_pred, mean_mod, var_mod = model(dummy_audio, dummy_visual)
+    print("Output Predictions:", y_pred)
+    print("Mean Modalities:", mean_mod)
+    print("Variance Modalities:", var_mod)
+
+    # print uncertainty for each modality
+    for i, var in enumerate(var_mod):
+        print(f"Modality {i} uncertainty:", var)
