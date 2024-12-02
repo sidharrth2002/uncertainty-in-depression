@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import time
 import torch
 import torch.nn as nn
 from datatypes import *
@@ -163,6 +164,9 @@ class COLDModelSimplified(nn.Module):
         all_audio_data = []
         all_visual_data = []
         
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Device: {device}")
+        
         for modality in modalities:
             modality_id = modality
             
@@ -176,8 +180,13 @@ class COLDModelSimplified(nn.Module):
         
         # Extract features and uncertainty
         
-        mean_audio, var_audio = self.audio_extractor(torch.tensor(all_audio_data[0]))        # Each: (batch, output_size)
-        mean_visual, var_visual = self.visual_extractor(torch.tensor(all_visual_data[0]))   # Each: (batch, output_size)
+        start_time = time.time()
+        
+        all_audio_data = torch.tensor(all_audio_data[0]).to(device)
+        all_visual_data = torch.tensor(all_visual_data[0]).to(device)
+        
+        mean_audio, var_audio = self.audio_extractor(all_audio_data)        # Each: (batch, output_size)
+        mean_visual, var_visual = self.visual_extractor(all_visual_data)   # Each: (batch, output_size)
         
         # mean_audio, var_audio = self.audio_extractor(data["modality:edaic_audio_mfcc:data"])        # Each: (batch, output_size)
         # mean_visual, var_visual = self.visual_extractor(data["modality:edaic_video_pose_gaze_aus:data"])   # Each: (batch, output_size)
@@ -208,7 +217,9 @@ class COLDModelSimplified(nn.Module):
 
 
 if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = COLDModelSimplified(output_size=2)  # e.g., 2 classes for depression detection
+    model.to(device)
     print(model)
     # Count number of parameters
     num_params = sum(p.numel() for p in model.parameters())
