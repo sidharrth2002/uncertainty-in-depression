@@ -1,29 +1,52 @@
-# download the tar files from E-DAIC
-
-# recursively download all files from https://dcapswoz.ict.usc.edu/wwwedaic/data/
-
-import os
+import bs4
 import requests
-import logging
+import multiprocessing
+import os
+import sys
+sys.setrecursionlimit(10000)
 
-logging.basicConfig(level=logging.INFO)
+url = 'https://dcapswoz.ict.usc.edu/wwwedaic/data/'
 
-def download_file(url, local_filename):
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        with open(local_filename, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
-    logging.info(f"Downloaded {url} to {local_filename}")
-    return local_filename
+download_path = "/home/sn666/data/edaic"
 
-def download_files(url, local_dir):
-    os.makedirs(local_dir, exist_ok=True)
-    with requests.get(url) as r:
-        r.raise_for_status()
-        for line in r.text.splitlines():
-            if line.startswith('<a href="') and line.endswith('.tar'):
-                filename = line.split('"')[1].split('/')[-1]
-                download_file(url + filename, os.path.join(local_dir, filename))
+def download_link_to_file(link, file_path):
+    # check if link is in log.txt
+    with open(os.path.join(download_path, 'log.txt'), 'r') as f:
+        if link in f.read():
+            return
+    print(f'Started downloading {link}')
+    with open(file_path, 'wb') as f:
+        f.write(requests.get(link).content)
+        # once the file is downloaded, write to log so we don't download it again
+        print(f'Done downloading {link}')
+        with open(os.path.join(download_path, 'log.txt'), 'a') as f:
+            f.write(link + '\n')
+    # wget.download(link, out=file_path, no_check_certificate=True)
+    return True
 
-download_files('https://dcapswoz.ict.usc.edu/wwwedaic/data/', 'data')
+
+def download(l):
+    # print(f"Downloading {l.get_text()}")
+    return download_link_to_file(url + l.get('href'), download_path + l.get_text())
+
+
+if __name__ == '__main__':
+    # download all files in the directory
+    r = requests.get(url)
+    data = bs4.BeautifulSoup(r.text, 'html.parser')
+    function_arguments = []
+    for l in data.find_all('a'):
+        if l.get('href') != '/' and l.parent.name == 'td' and l.get_text().split('_')[0].isdigit():
+            link = url + l['href']
+            # get content of a tag
+            function_arguments.append(l)
+
+    # print(f"Downloading {len(function_arguments)} files")
+
+    print(function_arguments)
+
+    # pool = multiprocessing.Pool(processes=2)
+    # outputs = pool.map(download, function_arguments)
+    
+    for arg in function_arguments:
+        download(arg)

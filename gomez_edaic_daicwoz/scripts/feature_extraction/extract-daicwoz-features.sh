@@ -2,7 +2,7 @@
 
 set -e
 
-NO_CHUNKED_DIR=./data/DAIC-WOZ/no-chunked/
+NO_CHUNKED_DIR=./original_data/DAIC-WOZ/no-chunked/
 
 python ./scripts/feature_extraction/daicwoz/untar_data.py --root-dir ./data/DAIC-WOZ/backup/ --dest-dir ./data/DAIC-WOZ/original_data/
 python ./scripts/feature_extraction/daicwoz/get_no_idxs.py --data-dir ./data/DAIC-WOZ/original_data/ --dest-dir ./data/DAIC-WOZ/no-chunked/
