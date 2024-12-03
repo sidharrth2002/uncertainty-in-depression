@@ -19,7 +19,7 @@ if __name__ == "__main__":
 
     sessionIDs = sorted( os.listdir(args.src_root) )
     for sessionID in tqdm(sessionIDs):
-        feature_path = os.path.join(args.src_root, sessionID, feature_dir, sessionID+"_"+featureID+".csv")
+        feature_path = os.path.join(args.src_root, sessionID, feature_dir, sessionID.replace("_P", "") +"_"+featureID+".csv")
         df = pd.read_csv(feature_path)
 
         seq = df.iloc[:, 4:].to_numpy()

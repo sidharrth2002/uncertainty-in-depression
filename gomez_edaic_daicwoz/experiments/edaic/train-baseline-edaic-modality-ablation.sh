@@ -6,7 +6,7 @@ cd ..
 EPOCHS=200
 MAX_LR=0.0001
 BATCH_SIZE=8
-SECONDS_PER_WINDOW=6
+SECONDS_PER_WINDOW=60
 
 A="edaic_audio_mfcc edaic_audio_egemaps"
 V="edaic_video_cnn_resnet edaic_video_pose_gaze_aus"

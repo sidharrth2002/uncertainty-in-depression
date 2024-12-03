@@ -15,15 +15,15 @@ if __name__ == "__main__":
     feature_dir = "features"
     featureID = "OpenSMILE2.3.0_egemaps"
 
-    dest_dir = os.path.join(args.src_root, modality_id)
+    dest_dir = os.path.join(args.dest_root, args.modality_id)
     os.makedirs(dest_dir, exist_ok = True)
 
     sessionIDs = sorted( os.listdir(args.src_root) )
+    print(args.src_root)
     for sessionID in tqdm(sessionIDs):
-        feature_path = os.path.join(args.src_root, sessionID, feature_dir, sessionID+"_"+featureID+".csv")
+        feature_path = os.path.join(args.src_root, sessionID, feature_dir, sessionID.replace("_P", "") +"_"+featureID+".csv")
         df = pd.read_csv(feature_path, delimiter=";")
 
         seq = df.iloc[:, 2:].to_numpy()
-
         dest_path = os.path.join(dest_dir, sessionID+".npz")
         np.savez_compressed(dest_path, data=seq)

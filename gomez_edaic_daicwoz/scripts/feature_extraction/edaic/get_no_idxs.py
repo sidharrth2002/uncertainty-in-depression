@@ -1,6 +1,8 @@
+#  SOMETHING VERY WRONG WITH THIS SCRIPT, WRITES EMPTY ARRAYS
 import os
 import numpy as np
 from tqdm import tqdm
+import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="", formatter_class=argparse.ArgumentDefaultsHelpFormatter)

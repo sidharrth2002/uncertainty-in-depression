@@ -1,7 +1,10 @@
 import models
+import models.coldfusion
+import models.coldfusion.model
 MODELS = {
     'baseline': models.BaselineModel,
     'perceiver': models.PerceiverModel,
+    'coldfusion': models.coldfusion.model.COLDModelSimplified
 }
 
 import datasets

@@ -18,8 +18,10 @@ if __name__ == "__main__":
        tar_path = os.path.join(args.root_dir, tar_file)
        print(tar_path)
        
-       
-       
        with tarfile.open(tar_path, 'r') as tar:
            tar.extractall(args.dest_dir)
+    
+       # delete the tar file
+       print(f"Deleting {tar_path}")
+       os.remove(tar_path)
                 

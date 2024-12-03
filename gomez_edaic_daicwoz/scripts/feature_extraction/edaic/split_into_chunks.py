@@ -3,6 +3,7 @@ import sys
 import joblib
 import numpy as np
 from tqdm import tqdm
+import argparse
 
 def process_video(videoID):
     dest_modality_dir = os.path.join(args.dest_dir, videoID.replace(".npz", ""), modality)
@@ -28,7 +29,9 @@ if __name__ == "__main__":
     parser.add_argument("--no-idxs-id", required=True, type=str)
     parser.add_argument("--frame-rate", required=True, type=int)
     args = parser.parse_args()
-
+    
+    print(f"Running split_into_chunks.py with arguments: {args}")
+    
     modalities = [(args.modality_id, args.frame_rate)]
     no_idxs_modalities = [args.no_idxs_id]
 
